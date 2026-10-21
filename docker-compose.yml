@@ -1,0 +1,87 @@
+version: '3.8'
+
+# Subred virtual aislada exigida por el proyecto
+networks:
+  red-aislada:
+    driver: bridge
+
+# Volúmenes persistentes para las dos bases de datos
+volumes:
+  pg_data:
+  redis_data:
+
+services:
+  # -------------------------------------------------------------
+  # MÓDULO A: API Gateway (Node.js) - Integrante 1
+  # Único servicio con puerto expuesto hacia la red pública/host
+  # -------------------------------------------------------------
+  modulo-a:
+    build: ./modulo-a
+    container_name: modulo-a
+    ports:
+      - "8080:8080"  # Exposición del Gateway al Host (localhost:8080)
+    networks:
+      - red-aislada
+    depends_on:
+      - modulo-b
+      - modulo-c
+
+  # -------------------------------------------------------------
+  # MÓDULO B: Servicio de Dominio (Python/FastAPI) - Integrante 2
+  # -------------------------------------------------------------
+  modulo-b:
+    build: ./modulo-b
+    container_name: modulo-b
+    environment:
+      - DB_HOST=db-relacional
+      - DB_NAME=negocio_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    depends_on:
+      - db-relacional
+    networks:
+      - red-aislada
+    # Nota: No exponemos puertos al 'host' público, solo se comunican en la red interna
+
+  # -------------------------------------------------------------
+  # MÓDULO C: Servicio de Auditoría (Go) - Integrante 3
+  # -------------------------------------------------------------
+  modulo-c:
+    build: ./modulo-c
+    container_name: modulo-c
+    expose:
+      - "6000"       # Visible SOLO dentro de red-aislada
+    networks:
+      - red-aislada
+    depends_on:
+      - db-nosql
+
+  # -------------------------------------------------------------
+  # BD 1: Relacional (PostgreSQL 15)
+  # -------------------------------------------------------------
+  db-relacional:
+    image: postgres:15-alpine
+    container_name: db-relacional
+    environment:
+      POSTGRES_DB: negocio_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - red-aislada
+
+  # -------------------------------------------------------------
+  # BD 2: NoSQL / Clave-Valor (Redis 7)
+  # -------------------------------------------------------------
+  db-nosql:
+    image: redis:7-alpine
+    container_name: db-nosql
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - red-aislada
+    # Sin bloque 'ports' para garantizar aislamiento interno
