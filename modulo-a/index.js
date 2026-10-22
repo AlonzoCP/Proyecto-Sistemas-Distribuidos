@@ -35,11 +35,11 @@ app.post('/api/pedidos', async (req, res) => {
     let resAuditoria = { status: "OMITTED_OR_MOCK" };
     try {
       const auditPayload = {
-        evento: "SOLICITUD_RECEPTADA",
-        origen: "modulo-a-gateway",
+        evento: "SOLICITUD_ENTRANTE",
+        origen: "modulo_a_gateway",
         cliente,
         producto,
-        monto: precio,
+        precio,
         timestamp
       };
       const responseC = await axios.post('http://modulo-c:6000/logs', auditPayload, { timeout: 3000 });
@@ -59,7 +59,7 @@ app.post('/api/pedidos', async (req, res) => {
     }
 
     // 4. Retornar Respuesta Consolidada al Cliente
-    return res.status(201).json({
+    return res.status(200).json({
       status: "PROCESADO",
       mensaje: "Pedido recibido, auditado y registrado correctamente",
       data: {
@@ -72,7 +72,11 @@ app.post('/api/pedidos', async (req, res) => {
       },
       auditoria: {
         log_key: resAuditoria.log_id || "audit:1024",
-        estado: "AUDITED"
+        estado: "Auditado"
+      },
+      "auditoría": {
+        log_key: resAuditoria.log_id || "audit:1024",
+        estado: "Auditado"
       }
     });
 
