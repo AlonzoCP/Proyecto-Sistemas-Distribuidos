@@ -19,7 +19,7 @@ services:
     build: ./modulo-a
     container_name: modulo-a
     ports:
-      - "8080:8080"  # Exposición del Gateway al Host (localhost:8080)
+      - "8080:8080" # Exposición del Gateway al Host (localhost:8080)
     networks:
       - red-aislada
     depends_on:
@@ -43,14 +43,18 @@ services:
       - red-aislada
     # Nota: No exponemos puertos al 'host' público, solo se comunican en la red interna
 
-  # -------------------------------------------------------------
-  # MÓDULO C: Servicio de Auditoría (Go) - Integrante 3
-  # -------------------------------------------------------------
+    # -------------------------------------------------------------
+    # MÓDULO C: Servicio de Auditoría (Go) - Integrante 3
+    # -------------------------------------------------------------
   modulo-c:
     build: ./modulo-c
     container_name: modulo-c
+    environment:
+      - PORT=6000
+      - REDIS_HOST=db-nosql
+      - REDIS_PORT=6379
     expose:
-      - "6000"       # Visible SOLO dentro de red-aislada
+      - "6000" # Visible SOLO dentro de red-aislada
     networks:
       - red-aislada
     depends_on:
@@ -69,7 +73,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
     networks:
       - red-aislada
 
