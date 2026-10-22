@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import psycopg2
 import os
+import time
 
 app = FastAPI()
 
@@ -25,25 +26,31 @@ def get_db_connection():
 # Crear tabla automáticamente al iniciar el contenedor
 @app.on_event("startup")
 def startup():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS pedidos (
-                pedido_id SERIAL PRIMARY KEY,
-                cliente VARCHAR(100),
-                producto VARCHAR(100),
-                precio NUMERIC,
-                pago VARCHAR(50),
-                timestamp VARCHAR(50),
-                estado VARCHAR(50)
-            )
-        ''')
-        conn.commit()
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Error inicializando BD: {e}")
+    max_retries = 10
+    for i in range(1, max_retries + 1):
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS pedidos (
+                    pedido_id SERIAL PRIMARY KEY,
+                    cliente VARCHAR(100),
+                    producto VARCHAR(100),
+                    precio NUMERIC,
+                    pago VARCHAR(50),
+                    timestamp VARCHAR(50),
+                    estado VARCHAR(50)
+                )
+            ''')
+            conn.commit()
+            cur.close()
+            conn.close()
+            print(f"[Módulo B] Base de datos inicializada correctamente")
+            return
+        except Exception as e:
+            print(f"[Módulo B] PostgreSQL no listo aún ({e}). Reintentando {i}/{max_retries} en 2s...")
+            time.sleep(2)
+    print("[Módulo B] Advertencia: No se pudo inicializar la BD tras varios intentos.")
 
 # Endpoint interno expuesto en el puerto 5000
 @app.post("/procesar-pedido")
