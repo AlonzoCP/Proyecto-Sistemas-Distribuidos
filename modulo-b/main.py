@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import psycopg2
 import os
 import time
@@ -16,7 +16,7 @@ DB_PASS = os.getenv("DB_PASSWORD", "postgres")
 class Pedido(BaseModel):
     cliente: str
     producto: str
-    precio: float
+    precio: int = Field(gt=0)
     pago: str
     timestamp: str
 
@@ -81,4 +81,40 @@ def procesar_pedido(pedido: Pedido):
             "timestamp": pedido.timestamp
         }
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Endpoint de salud para monitoreo
+@app.get("/health")
+def health_check():
+    return {"status": "UP", "modulo": "modulo-b-dominio"}
+
+# Endpoint para listar todos los pedidos almacenados en la base de datos
+@app.get("/pedidos")
+def listar_pedidos():
+    conn = get_db_connection()
+    if not conn:
+        raise HTTPException(status_code=500, detail="Error de conexión a PostgreSQL")
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT pedido_id, cliente, producto, precio, pago, timestamp, estado FROM pedidos ORDER BY timestamp DESC;")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        pedidos = []
+        for r in rows:
+            pedidos.append({
+                "pedido_id": r[0],
+                "cliente": r[1],
+                "producto": r[2],
+                "precio": int(r[3]),
+                "pago": r[4],
+                "timestamp": str(r[5]),
+                "estado": r[6]
+            })
+        return pedidos
+    except Exception as e:
+        if conn:
+            conn.close()
         raise HTTPException(status_code=500, detail=str(e))

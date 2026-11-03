@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TechOrders | Gestión de Pedidos</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --verde-principal: #16a34a;
+      --verde-oscuro: #14532d;
+      --verde-suave: #dcfce7;
+      --fondo: #f0fdf4;
+      --texto: #14251b;
+    }
+
+    body {
+      min-height: 100vh;
+      color: var(--texto);
+      background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+    }
+
+    .app-shell {
+      max-width: 1280px;
+    }
+
+    .app-header {
+      border-bottom: 1px solid rgba(20, 83, 45, 0.18);
+    }
+
+    .brand-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      margin-right: .75rem;
+      border-radius: 1rem;
+      color: #fff;
+      background: var(--verde-oscuro);
+      box-shadow: 0 .5rem 1rem rgba(22, 163, 74, .25);
+      font-size: 1.5rem;
+    }
+
+    .brand-title {
+      color: var(--verde-oscuro);
+      letter-spacing: -.02em;
+    }
+
+    .brand-subtitle {
+      color: #3f6b4d;
+      font-size: .9rem;
+    }
+
+    .card {
+      overflow: hidden;
+      border: 0;
+      border-radius: 1rem;
+      background: rgba(248, 255, 250, .96);
+      box-shadow: 0 .75rem 2rem rgba(20, 83, 45, .1) !important;
+    }
+
+    .card-header {
+      border: 0;
+    }
+
+    .card-header-primary {
+      color: #fff;
+      background: linear-gradient(135deg, var(--verde-oscuro), var(--verde-principal));
+    }
+
+    .card-header-dark {
+      color: #fff;
+      background: #166534;
+    }
+
+    .card-header-soft {
+      color: var(--verde-oscuro);
+      background: var(--verde-suave);
+    }
+
+    .form-label {
+      color: var(--verde-oscuro);
+      font-weight: 600;
+    }
+
+    .form-control,
+    .form-select {
+      border-color: #a7d8b5;
+      border-radius: .65rem;
+      background-color: #fff;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: var(--verde-principal);
+      box-shadow: 0 0 0 .2rem rgba(22, 163, 74, .15);
+    }
+
+    .btn-order {
+      border: 0;
+      border-radius: .65rem;
+      background: var(--verde-principal);
+      box-shadow: 0 .4rem .8rem rgba(22, 163, 74, .2);
+    }
+
+    .btn-order:hover,
+    .btn-order:focus {
+      background: var(--verde-oscuro);
+    }
+
+    .btn-refresh {
+      color: var(--verde-oscuro);
+      border: 1px solid rgba(20, 83, 45, .2);
+      background: #fff;
+    }
+
+    .btn-refresh:hover {
+      color: #fff;
+      background: var(--verde-principal);
+    }
+
+    .table {
+      --bs-table-bg: transparent;
+      --bs-table-striped-bg: rgba(220, 252, 231, .55);
+      --bs-table-hover-bg: rgba(187, 247, 208, .5);
+      margin-bottom: 0;
+    }
+
+    .table thead {
+      color: #fff;
+      background: var(--verde-oscuro);
+    }
+
+    .table th {
+      color: #fff;
+      font-size: .78rem;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .table td {
+      vertical-align: middle;
+    }
+
+    .status-badge {
+      color: #166534;
+      background: #dcfce7;
+    }
+
+    code {
+      color: var(--verde-oscuro);
+    }
+  </style>
+</head>
+<body>
+  <div class="container app-shell py-4 py-lg-5">
+    <header class="app-header pb-4 mb-4 d-flex flex-column flex-md-row gap-3 justify-content-between align-items-md-center">
+      <div class="d-flex align-items-center">
+        <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+        <div>
+          <h1 class="brand-title h3 fw-bold mb-1">TechOrders</h1>
+          <p class="brand-subtitle mb-0">Gestión distribuida de productos tecnológicos</p>
+        </div>
+      </div>
+      <span class="badge rounded-pill px-3 py-2" style="color:#fff;background:#16a34a;">Sistema activo</span>
+    </header>
+
+    <div class="row g-4">
+      <!-- Formulario para Nuevo Pedido -->
+      <div class="col-md-5">
+        <div class="card">
+          <div class="card-header card-header-dark fw-semibold">Nuevo pedido</div>
+          <div class="card-body">
+            <form id="form-pedido">
+              <div class="mb-3">
+                <label class="form-label">Nombre del Cliente</label>
+                <input type="text" id="cliente" class="form-control" placeholder="Ej: Esteban Padilla" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Producto</label>
+                <input type="text" id="producto" class="form-control" placeholder="Ej: Teclado Mecánico" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Precio (CLP)</label>
+                <input type="number" step="1" min="1" id="precio" class="form-control" placeholder="Ej: 29990" required>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">Medio de Pago</label>
+                <select id="pago" class="form-select" required>
+                  <option value="Debito">Débito</option>
+                  <option value="Credito">Crédito</option>
+                  <option value="Transferencia">Transferencia</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-order text-white w-100 fw-bold">Registrar pedido</button>
+            </form>
+            <div id="alert-container" class="mt-3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla de Pedidos Registrados -->
+      <div class="col-md-7">
+        <div class="card mb-4">
+          <div class="card-header card-header-primary d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Pedidos registrados</span>
+            <button onclick="cargarDatos()" class="btn btn-sm btn-refresh">Actualizar</button>
+          </div>
+          <div class="card-body p-0 table-responsive" style="max-height: 250px;">
+            <table class="table table-hover table-striped text-center">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Cliente</th>
+                  <th>Producto</th>
+                  <th>Precio</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-pedidos"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tabla de Logs de Auditoría -->
+        <div class="card">
+          <div class="card-header card-header-soft fw-semibold">Actividad de auditoría</div>
+          <div class="card-body p-0 table-responsive" style="max-height: 200px;">
+            <table class="table table-hover table-sm mb-0 text-center">
+              <thead>
+                <tr>
+                  <th>Key Redis</th>
+                  <th>Evento</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-auditoria"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function cargarDatos() {
+      // Cargar Pedidos
+      try {
+        const resB = await fetch('/api/pedidos');
+        const pedidos = await resB.json();
+        const tbodyP = document.getElementById('tabla-pedidos');
+        tbodyP.innerHTML = pedidos.map(p => `
+          <tr>
+            <td><strong>#${p.pedido_id}</strong></td>
+            <td>${p.cliente}</td>
+            <td>${p.producto}</td>
+            <td>CLP ${new Intl.NumberFormat('es-CL').format(Number(p.precio))}</td>
+            <td><span class="badge status-badge">${p.estado}</span></td>
+          </tr>
+        `).join('');
+      } catch (e) { console.error(e); }
+
+      // Cargar Auditoría
+      try {
+        const resC = await fetch('/api/auditoria');
+        const logs = await resC.json();
+        const tbodyA = document.getElementById('tabla-auditoria');
+        tbodyA.innerHTML = logs.map(l => `
+          <tr>
+            <td><code>${l.key || l.log_id || 'N/A'}</code></td>
+            <td>${l.evento || 'SOLICITUD_RECEPTADA'}</td>
+            <td><small>${l.timestamp || ''}</small></td>
+          </tr>
+        `).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    document.getElementById('form-pedido').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const alertDiv = document.getElementById('alert-container');
+      alertDiv.innerHTML = '<div class="alert alert-info">Procesando pedido...</div>';
+
+      const payload = {
+        cliente: document.getElementById('cliente').value,
+        producto: document.getElementById('producto').value,
+        precio: Number(document.getElementById('precio').value),
+        pago: document.getElementById('pago').value
+      };
+
+      try {
+        const res = await fetch('/api/pedidos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          alertDiv.innerHTML = '<div class="alert alert-success">¡Pedido registrado y auditado con éxito!</div>';
+          document.getElementById('form-pedido').reset();
+          cargarDatos();
+        } else {
+          alertDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.mensaje}</div>`;
+        }
+      } catch (err) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Error de comunicación con el Gateway</div>';
+      }
+    });
+
+    cargarDatos();
+  </script>
+</body>
+</html>

@@ -46,6 +46,8 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Persistir traza en Redis (Motor BD 2)
 	if err := rdb.Set(ctx, logID, data, 0).Err(); err != nil {
 		log.Printf("Error guardando en Redis: %v", err)
+		http.Error(w, "No se pudo guardar la auditoria", http.StatusInternalServerError)
+		return
 	}
 
 	// Respuesta hacia Modulo A
@@ -57,17 +59,61 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Funcion para obtener los logs desde Redis y devolverlos como JSON
+func getLogsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	ctx := context.Background()
+	keys, err := rdb.Keys(ctx, "log:*").Result()
+	if err != nil {
+		http.Error(w, `{"status":"ERROR","mensaje":"Fallo al leer claves de Redis"}`, http.StatusInternalServerError)
+		return
+	}
+
+	logs := []map[string]interface{}{}
+	for _, key := range keys {
+		val, err := rdb.Get(ctx, key).Result()
+		if err == nil {
+			var logEntry map[string]interface{}
+			if json.Unmarshal([]byte(val), &logEntry) == nil {
+				logEntry["key"] = key
+				logs = append(logs, logEntry)
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(logs)
+}
+
 func main() {
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
 		redisHost = "db-nosql"
 	}
+	redisPort := os.Getenv("REDIS_PORT")
+	if redisPort == "" {
+		redisPort = "6379"
+	}
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "6000"
+	}
 
 	rdb = redis.NewClient(&redis.Options{
-		Addr: fmt.Sprintf("%s:6379", redisHost),
+		Addr: fmt.Sprintf("%s:%s", redisHost, redisPort),
 	})
 
-	http.HandleFunc("/logs", handleLogs)
+	http.HandleFunc("/logs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handleLogs(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			getLogsHandler(w, r)
+			return
+		}
+		http.Error(w, "Metodo no permitido", http.StatusMethodNotAllowed)
+	})
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
@@ -75,9 +121,8 @@ func main() {
 			"status": "UP",
 		})
 	})
-
-	log.Println("Modulo C (Auditoria) escuchando en puerto 6000")
-	if err := http.ListenAndServe(":6000", nil); err != nil {
+	log.Printf("Modulo C (Auditoria) escuchando en puerto %s", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
 }
