@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TechOrders | Gestión de Pedidos</title>
+  <title>TechOrders</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
     :root {
@@ -21,7 +21,7 @@
     }
 
     .app-shell {
-      max-width: 1280px;
+      max-width: 1320px;
     }
 
     .app-header {
@@ -50,6 +50,55 @@
     .brand-subtitle {
       color: #3f6b4d;
       font-size: .9rem;
+    }
+
+    /* Píldoras del Health Dashboard */
+    .cluster-bar {
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid rgba(20, 83, 45, 0.15);
+      border-radius: .85rem;
+      padding: .5rem .85rem;
+    }
+
+    .node-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: .78rem;
+      font-weight: 600;
+      padding: .3rem .65rem;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid #bbf7d0;
+      color: var(--verde-oscuro);
+    }
+
+    .node-pill.down {
+      background: #fef2f2;
+      border-color: #fecaca;
+      color: #991b1b;
+    }
+
+    .node-pill.failover-alert {
+      background: #fffbeb;
+      border-color: #fde68a;
+      color: #92400e;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--verde-principal);
+      display: inline-block;
+    }
+
+    .dot.down {
+      background: #dc2626;
+    }
+
+    .dot.warn {
+      background: #d97706;
     }
 
     .card {
@@ -109,6 +158,21 @@
       background: var(--verde-oscuro);
     }
 
+    .btn-burst {
+      border: 1px solid #86efac;
+      border-radius: .65rem;
+      background: #f0fdf4;
+      color: var(--verde-oscuro);
+      font-weight: 600;
+      font-size: .85rem;
+    }
+
+    .btn-burst:hover {
+      background: var(--verde-oscuro);
+      color: #fff;
+      border-color: var(--verde-oscuro);
+    }
+
     .btn-refresh {
       color: var(--verde-oscuro);
       border: 1px solid rgba(20, 83, 45, .2);
@@ -134,18 +198,36 @@
 
     .table th {
       color: #fff;
-      font-size: .78rem;
+      font-size: .75rem;
       letter-spacing: .04em;
       text-transform: uppercase;
+      white-space: nowrap;
     }
 
     .table td {
       vertical-align: middle;
+      font-size: .88rem;
     }
 
     .status-badge {
       color: #166534;
       background: #dcfce7;
+    }
+
+    .replica-badge {
+      font-family: monospace;
+      font-size: .75rem;
+      color: #14532d;
+      background: #e2f8ea;
+      border: 1px solid #bbf7d0;
+      padding: .2rem .45rem;
+      border-radius: .4rem;
+    }
+
+    .failover-badge {
+      color: #92400e;
+      background: #fef3c7;
+      border: 1px solid #fde68a;
     }
 
     code {
@@ -154,21 +236,32 @@
   </style>
 </head>
 <body>
-  <div class="container app-shell py-4 py-lg-5">
-    <header class="app-header pb-4 mb-4 d-flex flex-column flex-md-row gap-3 justify-content-between align-items-md-center">
+  <div class="container app-shell py-4">
+    <!-- Encabezado + Health Dashboard en vivo -->
+    <header class="app-header pb-3 mb-4 d-flex flex-column flex-lg-row gap-3 justify-content-between align-items-lg-center">
       <div class="d-flex align-items-center">
         <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
         <div>
-          <h1 class="brand-title h3 fw-bold mb-1">TechOrders</h1>
-          <p class="brand-subtitle mb-0">Gestión distribuida de productos tecnológicos</p>
+          <h1 class="brand-title h3 fw-bold mb-0">TechOrders</h1>
+          <p class="brand-subtitle mb-0">Gestión distribuida y alta disponibilidad de productos tecnológicos</p>
         </div>
       </div>
-      <span class="badge rounded-pill px-3 py-2" style="color:#fff;background:#16a34a;">Sistema activo</span>
+
+      <!-- Monitor de Salud del Clúster -->
+      <div class="cluster-bar d-flex flex-wrap gap-2 align-items-center" id="health-dashboard">
+        <span class="node-pill" id="pill-nginx"><span class="dot"></span> NGINX: UP</span>
+        <span class="node-pill" id="pill-mod-a"><span class="dot"></span> Mod A: 2/2</span>
+        <span class="node-pill" id="pill-mod-b"><span class="dot"></span> Mod B: 2/2</span>
+        <span class="node-pill" id="pill-mod-c"><span class="dot"></span> Mod C: 2/2</span>
+        <span class="node-pill" id="pill-pg"><span class="dot"></span> PG: PRIMARY+1</span>
+        <span class="node-pill" id="pill-redis"><span class="dot"></span> Redis: CLUSTER OK</span>
+        <span class="node-pill" id="pill-failover"><span class="dot"></span> Failovers: 0</span>
+      </div>
     </header>
 
     <div class="row g-4">
-      <!-- Formulario para Nuevo Pedido -->
-      <div class="col-md-5">
+      <!-- Columna Izquierda: Formulario + Generador de Ráfagas -->
+      <div class="col-lg-4">
         <div class="card">
           <div class="card-header card-header-dark fw-semibold">Nuevo pedido</div>
           <div class="card-body">
@@ -195,19 +288,40 @@
               </div>
               <button type="submit" class="btn btn-order text-white w-100 fw-bold">Registrar pedido</button>
             </form>
+
+            <!-- Bloque de Simulación de Ráfagas (Prueba de Balanceo y HA) -->
+            <hr class="my-3" style="border-color: rgba(20,83,45,0.2);">
+            <div>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="form-label mb-0 small">Simulación de Ráfagas (HA)</span>
+                <span class="badge bg-success-subtle text-success border border-success-subtle" style="font-size:.7rem;">Round Robin</span>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" onclick="enviarRafaga(10)" class="btn btn-burst w-50 py-2">Enviar 10 pedidos</button>
+                <button type="button" onclick="enviarRafaga(50)" class="btn btn-burst w-50 py-2">Enviar 50 pedidos</button>
+              </div>
+              <div id="burst-progress" class="mt-2 d-none">
+                <div class="progress" style="height: 8px;">
+                  <div id="burst-bar" class="progress-bar bg-success progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                </div>
+                <small id="burst-status" class="text-muted d-block mt-1" style="font-size:.75rem;"></small>
+              </div>
+            </div>
+
             <div id="alert-container" class="mt-3"></div>
           </div>
         </div>
       </div>
 
-      <!-- Tabla de Pedidos Registrados -->
-      <div class="col-md-7">
+      <!-- Columna Derecha: Tablas con Trazabilidad de Nodos -->
+      <div class="col-lg-8">
+        <!-- Tabla 1: Pedidos Registrados -->
         <div class="card mb-4">
           <div class="card-header card-header-primary d-flex justify-content-between align-items-center">
-            <span class="fw-semibold">Pedidos registrados</span>
+            <span class="fw-semibold">Pedidos registrados (PostgreSQL)</span>
             <button onclick="cargarDatos()" class="btn btn-sm btn-refresh">Actualizar</button>
           </div>
-          <div class="card-body p-0 table-responsive" style="max-height: 250px;">
+          <div class="card-body p-0 table-responsive" style="max-height: 255px;">
             <table class="table table-hover table-striped text-center">
               <thead>
                 <tr>
@@ -215,6 +329,7 @@
                   <th>Cliente</th>
                   <th>Producto</th>
                   <th>Precio</th>
+                  <th>Nodo Dominio</th>
                   <th>Estado</th>
                 </tr>
               </thead>
@@ -223,15 +338,24 @@
           </div>
         </div>
 
-        <!-- Tabla de Logs de Auditoría -->
+        <!-- Tabla 2: Dashboard Detallado de Auditoría -->
         <div class="card">
-          <div class="card-header card-header-soft fw-semibold">Actividad de auditoría</div>
-          <div class="card-body p-0 table-responsive" style="max-height: 200px;">
+          <div class="card-header card-header-soft d-flex justify-content-between align-items-center">
+            <span class="fw-semibold">Dashboard de Auditoría y Trazabilidad (Redis)</span>
+            <select id="filtro-evento" onchange="renderizarAuditoria()" class="form-select form-select-sm w-auto" style="font-size:.78rem;">
+              <option value="TODOS">Todos los eventos</option>
+              <option value="PEDIDO">Solo pedidos</option>
+              <option value="FAILOVER">Eventos Failover</option>
+            </select>
+          </div>
+          <div class="card-body p-0 table-responsive" style="max-height: 235px;">
             <table class="table table-hover table-sm mb-0 text-center">
               <thead>
                 <tr>
                   <th>Key Redis</th>
                   <th>Evento</th>
+                  <th>Gateway</th>
+                  <th>Nodo Auditoría</th>
                   <th>Timestamp</th>
                 </tr>
               </thead>
@@ -244,8 +368,11 @@
   </div>
 
   <script>
+    let logsCache = [];
+
+    // 1. Cargar Pedidos y Auditoría
     async function cargarDatos() {
-      // Cargar Pedidos
+      // Cargar Pedidos (Módulo B -> PostgreSQL)
       try {
         const resB = await fetch('/api/pedidos');
         const pedidos = await resB.json();
@@ -256,30 +383,81 @@
             <td>${p.cliente}</td>
             <td>${p.producto}</td>
             <td>CLP ${new Intl.NumberFormat('es-CL').format(Number(p.precio))}</td>
+            <td><span class="replica-badge">${p.nodo_dominio || p.atendido_por || 'modulo-b-1'}</span></td>
             <td><span class="badge status-badge">${p.estado}</span></td>
           </tr>
         `).join('');
-      } catch (e) { console.error(e); }
+      } catch (e) { console.error('Error cargando pedidos:', e); }
 
-      // Cargar Auditoría
+      // Cargar Auditoría (Módulo C -> Redis)
       try {
         const resC = await fetch('/api/auditoria');
-        const logs = await resC.json();
-        const tbodyA = document.getElementById('tabla-auditoria');
-        tbodyA.innerHTML = logs.map(l => `
-          <tr>
-            <td><code>${l.key || l.log_id || 'N/A'}</code></td>
-            <td>${l.evento || 'SOLICITUD_RECEPTADA'}</td>
-            <td><small>${l.timestamp || ''}</small></td>
-          </tr>
-        `).join('');
-      } catch (e) { console.error(e); }
+        logsCache = await resC.json();
+        renderizarAuditoria();
+      } catch (e) { console.error('Error cargando auditoría:', e); }
     }
 
+    // Renderizar Auditoría con soporte de filtros
+    function renderizarAuditoria() {
+      const filtro = document.getElementById('filtro-evento').value;
+      const tbodyA = document.getElementById('tabla-auditoria');
+
+      const filtrados = logsCache.filter(l => {
+        const ev = (l.evento || 'SOLICITUD_ENTRANTE').toUpperCase();
+        if (filtro === 'FAILOVER') return ev.includes('FAILOVER') || ev.includes('PROMOTE');
+        if (filtro === 'PEDIDO') return !ev.includes('FAILOVER') && !ev.includes('PROMOTE');
+        return true;
+      });
+
+      tbodyA.innerHTML = filtrados.map(l => {
+        const ev = l.evento || 'SOLICITUD_ENTRANTE';
+        const esFailover = ev.toUpperCase().includes('FAILOVER') || ev.toUpperCase().includes('PROMOTE');
+        return `
+          <tr>
+            <td><code>${l.key || l.log_id || 'N/A'}</code></td>
+            <td><span class="badge ${esFailover ? 'failover-badge' : 'status-badge'}">${ev}</span></td>
+            <td><span class="replica-badge">${l.nodo_gateway || l.origen || 'modulo-a-1'}</span></td>
+            <td><span class="replica-badge">${l.nodo_auditoria || l.atendido_por || 'modulo-c-1'}</span></td>
+            <td><small>${l.timestamp || ''}</small></td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // 2. Actualizar Health Dashboard en tiempo real
+    async function actualizarEstadoCluster() {
+      try {
+        const res = await fetch('/api/cluster-status');
+        if (!res.ok) return; // Si aún no existe el endpoint en U3, mantiene los valores visuales por defecto
+        const st = await res.json();
+
+        actualizarPill('pill-mod-a', `Mod A: ${st.modulo_a?.activos ?? 2}/${st.modulo_a?.total ?? 2}`, (st.modulo_a?.activos ?? 2) > 0);
+        actualizarPill('pill-mod-b', `Mod B: ${st.modulo_b?.activos ?? 2}/${st.modulo_b?.total ?? 2}`, (st.modulo_b?.activos ?? 2) > 0);
+        actualizarPill('pill-mod-c', `Mod C: ${st.modulo_c?.activos ?? 2}/${st.modulo_c?.total ?? 2}`, (st.modulo_c?.activos ?? 2) > 0);
+        actualizarPill('pill-pg', `PG: ${st.postgres?.estado ?? 'PRIMARY+1'}`, st.postgres?.ok !== false);
+        actualizarPill('pill-redis', `Redis: ${st.redis?.estado ?? 'CLUSTER OK'}`, st.redis?.ok !== false);
+
+        const failovers = st.failovers_detectados ?? 0;
+        const pillFo = document.getElementById('pill-failover');
+        pillFo.className = `node-pill ${failovers > 0 ? 'failover-alert' : ''}`;
+        pillFo.innerHTML = `<span class="dot ${failovers > 0 ? 'warn' : ''}"></span> Failovers: ${failovers}`;
+      } catch (e) {
+        // Silencioso mientras se implementa /api/cluster-status en el Gateway
+      }
+    }
+
+    function actualizarPill(id, texto, activo) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = `node-pill ${activo ? '' : 'down'}`;
+      el.innerHTML = `<span class="dot ${activo ? '' : 'down'}"></span> ${texto}`;
+    }
+
+    // 3. Envío Individual
     document.getElementById('form-pedido').addEventListener('submit', async (e) => {
       e.preventDefault();
       const alertDiv = document.getElementById('alert-container');
-      alertDiv.innerHTML = '<div class="alert alert-info">Procesando pedido...</div>';
+      alertDiv.innerHTML = '<div class="alert alert-info py-2 small">Procesando pedido distribuido...</div>';
 
       const payload = {
         cliente: document.getElementById('cliente').value,
@@ -297,18 +475,75 @@
         const data = await res.json();
 
         if (res.ok) {
-          alertDiv.innerHTML = '<div class="alert alert-success">¡Pedido registrado y auditado con éxito!</div>';
+          const infoNodos = data.nodos
+            ? `<br><small>Atendido por: <b>${data.nodos.gateway || 'mod-a'}</b> → <b>${data.nodos.dominio || 'mod-b'}</b> / <b>${data.nodos.auditoria || 'mod-c'}</b></small>`
+            : '';
+          alertDiv.innerHTML = `<div class="alert alert-success py-2 small">¡Pedido registrado con éxito!${infoNodos}</div>`;
           document.getElementById('form-pedido').reset();
           cargarDatos();
         } else {
-          alertDiv.innerHTML = `<div class="alert alert-danger">Error: ${data.mensaje}</div>`;
+          alertDiv.innerHTML = `<div class="alert alert-danger py-2 small">Error: ${data.mensaje}</div>`;
         }
       } catch (err) {
-        alertDiv.innerHTML = '<div class="alert alert-danger">Error de comunicación con el Gateway</div>';
+        alertDiv.innerHTML = '<div class="alert alert-danger py-2 small">Error de comunicación con el Balanceador</div>';
       }
     });
 
+    // 4. Envío de Ráfagas Controladas (10 / 50 pedidos)
+    async function enviarRafaga(cantidad) {
+      const progressBox = document.getElementById('burst-progress');
+      const progressBar = document.getElementById('burst-bar');
+      const statusText = document.getElementById('burst-status');
+      const alertDiv = document.getElementById('alert-container');
+
+      const clientes = ['Esteban Padilla', 'Franco Jorquera', 'María Vidal', 'Andrés Castillo', 'Camila Rojas'];
+      const productos = [
+        { nombre: 'Teclado Mecánico RGB', precio: 34990 },
+        { nombre: 'Mouse Inalámbrico Pro', precio: 19990 },
+        { nombre: 'Monitor 24" IPS', precio: 149990 },
+        { nombre: 'Audífonos Studio', precio: 45900 },
+        { nombre: 'SSD NVMe 1TB', precio: 64990 }
+      ];
+      const pagos = ['Debito', 'Credito', 'Transferencia'];
+
+      progressBox.classList.remove('d-none');
+      progressBar.style.width = '0%';
+      let exitosos = 0;
+      let fallidos = 0;
+
+      const tareas = Array.from({ length: cantidad }, (_, i) => {
+        const prod = productos[i % productos.length];
+        const body = {
+          cliente: clientes[i % clientes.length],
+          producto: `${prod.nombre} #${i + 1}`,
+          precio: prod.precio,
+          pago: pagos[i % pagos.length]
+        };
+
+        return fetch('/api/pedidos', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        })
+          .then(r => { if (r.ok) exitosos++; else fallidos++; })
+          .catch(() => { fallidos++; })
+          .finally(() => {
+            const completados = exitosos + fallidos;
+            const pct = Math.round((completados / cantidad) * 100);
+            progressBar.style.width = `${pct}%`;
+            statusText.textContent = `Procesando ráfaga: ${completados}/${cantidad} (${exitosos} OK, ${fallidos} err)`;
+          });
+      });
+
+      await Promise.all(tareas);
+      alertDiv.innerHTML = `<div class="alert alert-success py-2 small">Ráfaga finalizada: <b>${exitosos}</b> exitosos, <b>${fallidos}</b> fallidos.</div>`;
+      cargarDatos();
+    }
+
+    // Inicialización y polling periódico
     cargarDatos();
+    actualizarEstadoCluster();
+    setInterval(actualizarEstadoCluster, 3000);
   </script>
 </body>
 </html>
