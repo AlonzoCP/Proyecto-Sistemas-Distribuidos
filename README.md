@@ -1,83 +1,113 @@
-# Proyecto de Sistemas Distribuidos
+# TechOrders — Proyecto Sistemas Distribuidos (Unidad 3)
 
-Sistema de arquitectura distribuida políglota y heterogénea orquestado mediante contenedores Docker. Implementa un API Gateway en Node.js, un Servicio de Dominio en Python/FastAPI con PostgreSQL, y un Servicio de Auditoría en Go con Redis, todos aislados en una subred privada de Docker (`red-aislada`).
+Plataforma políglota de pedidos (Node.js · Python/FastAPI · Go) evolucionada hacia **alta disponibilidad, tolerancia a fallos y escalabilidad**: sin puntos únicos de falla, tres redes segmentadas, balanceo con health checks activos, failover automático de PostgreSQL y Redis, particionamiento de datos, pruebas de caos/estrés y una interfaz SPA con monitoreo en tiempo real.
 
----
+Grupo G — Juan Guzmán, Alonso Cabello, Cristóbal Vidal · Universidad de Talca
 
-## Procedimiento de Despliegue y Verificación en Vivo
+![Topología](docs/diagramas/topologia-u3.png)
 
-Ejecutar la siguiente secuencia de comandos desde la terminal de **PowerShell** en la carpeta raíz del proyecto (`Proyecto-Sistemas-Distribuidos`):
+## Componentes (21 contenedores)
 
-### 1. Construcción de las Imágenes de los Contenedores
-Construye las imágenes actualizadas de todos los microservicios:
+| Capa | Contenedores | Tecnología |
+|---|---|---|
+| Entrada | `lb-1` (:8080), `lb-2` (:8081) | HAProxy 3.0 — Round Robin + health check activo |
+| Gateway | `modulo-a-1`, `modulo-a-2` | Node.js / Express — reintentos con backoff, trazabilidad, SPA |
+| Balanceo interno | `lb-int-1`, `lb-int-2` | HAProxy 3.0 (:5000 → B, :6000 → C) |
+| Dominio | `modulo-b-1`, `modulo-b-2` | Python / FastAPI — idempotencia, pool de conexiones |
+| Auditoría | `modulo-c-1`, `modulo-c-2` | Go — cliente Redis Cluster |
+| BD relacional | `pg-1`, `pg-2`, `pgpool-1`, `pgpool-2` | PostgreSQL 16 (streaming replication, particionado HASH) + Pgpool-II con watchdog |
+| BD clave-valor | `redis-1` … `redis-6` (+ `redis-cluster-init`) | Redis 7.4 Cluster (3 maestros + 3 réplicas, 16.384 slots) |
+
+## Levantar el sistema
+
+Requisitos: Docker Desktop con al menos **4 CPU y 6 GB de RAM** asignados.
+
 ```powershell
-docker compose up --build
+docker compose up -d --build
+docker compose ps            # esperar a que todo esté "healthy" (≈ 1 min la primera vez)
 ```
 
-### 2. Levantamiento del Entorno en Segundo Plano
-Despliega los 5 contenedores y la red virtual privada:
+- Interfaz: **http://localhost:8080** (respaldo: http://localhost:8081)
+- Estadísticas de los balanceadores: http://localhost:8404/stats y http://localhost:8405/stats
+- Reiniciar desde cero (borra los datos): `docker compose down -v`
+
+> Si se clonó en Windows antes de existir `.gitattributes` y algún contenedor falla con `/bin/bash^M`, ejecutar `git rm --cached -r . ; git reset --hard` para normalizar los fines de línea.
+
+## Interfaz
+
+| Operación | Monitor de salud con una réplica caída |
+|---|---|
+| ![](docs/capturas/01-operacion.png) | ![](docs/capturas/03-monitor-falla.png) |
+
+- **Nuevo pedido** con la traza completa de la petición (balanceador → gateway → réplica de C → réplica de B).
+- **Simulación de ráfagas**: N pedidos con concurrencia C; muestra TPS, p50/p95/p99, reparto por réplica y verificación de integridad.
+- **Tablas** de pedidos (PostgreSQL) y auditoría (Redis) con el nodo que atendió cada transacción y filtro por réplica.
+- **Monitor de salud**: estado de cada nodo, vista de los health checks de HAProxy, nodos PostgreSQL (rol, replicación, timeline), Redis Cluster (rol, slots, claves) y eventos de failover.
+
+*(Las capturas se tomaron en el laboratorio local de validación; en Docker los nombres aparecen como `lb-1`, `pg-1`, `172.29.30.x`.)*
+
+## API
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/api/pedidos` | Crea un pedido. Acepta `Idempotency-Key`. Devuelve `trazabilidad` por fase |
+| GET | `/api/pedidos?limit=50` | Últimos pedidos (lectura balanceada por Pgpool) |
+| GET | `/api/auditoria?limit=50&evento=` | Últimas trazas de auditoría |
+| GET | `/api/cluster-status` | Estado de todas las capas y eventos de failover |
+| GET | `/api/integridad?lote=X` | Pedidos en PostgreSQL vs trazas en Redis para un lote de prueba |
+| GET | `/health` | Liveness de cada servicio |
+
+Contratos completos en [docs/ACTUALIZACION_DOCUMENTO_DISENO.md](docs/ACTUALIZACION_DOCUMENTO_DISENO.md#5-contratos-de-interfaces-actualizados).
+
+## Pruebas de resiliencia, caos y estrés
+
+Plan completo: [docs/PLAN_DE_PRUEBAS.md](docs/PLAN_DE_PRUEBAS.md). Los resultados quedan en `resultados/`.
+
 ```powershell
-docker compose up -d
+# Escenarios automatizados (PowerShell 5.1 o 7)
+.\pruebas\caos\escenario1-caida-nodos.ps1     # kill de réplicas A/B/C, primario PG y maestro Redis
+.\pruebas\caos\escenario2-red.ps1             # latencia, pérdida de paquetes y particiones
+.\pruebas\caos\escenario3-sobrecarga.ps1      # rampa de escrituras hasta 400 pedidos/s
+.\pruebas\caos\escenario4-usuarios.ps1        # rampa hasta 300 usuarios (lecturas + escrituras)
+
+# Análisis
+python pruebas\analisis\rto.py resultados\sonda-<lote>-sonda.csv resultados\eventos-<lote>.log
+python pruebas\analisis\por_etapa.py resultados\k6-<lote>.csv
 ```
 
-### 3. Verificación de Contenedores y Mapeo de Puertos
-Valida que todos los contenedores estén en estado Running y que únicamente el Módulo A exponga su puerto hacia el Host:
-```powershell
-docker ps
-```
-
-### 4. Inspección de Logs en Tiempo Real
-En otra ventana de PowerShell, puedes ejecutar el seguimiento continuo de trazas:
-```powershell
-docker compose logs -f
-```
-
-### 5. Prueba de Ingesta de Datos de Extremo a Extremo
-Envía peticiones de prueba HTTP POST al API Gateway para validar la transacción y la orquestación distribuida:
-```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/pedidos" -Method Post -ContentType "application/json" -Body '{"cliente": "Esteban Castillo", "producto": "Teclado Mecánico", "precio": 14990, "pago": "Debito"}'
-```
+Inyección manual de fallos:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/pedidos" -Method Post -ContentType "application/json" -Body '{"cliente": "Andrés Padilla", "producto": "Audífonos JBL", "precio": 29990, "pago": "Debito"}'
+. .\pruebas\caos\caos.ps1
+Get-PoolNodes                       # nodos PostgreSQL vistos por Pgpool
+Matar-PrimarioPG                    # docker kill del primario actual
+Matar-MaestroRedis
+Matar-Contenedor modulo-b-1 ; Iniciar-Contenedor modulo-b-1
+Agregar-Latencia modulo-b-1 -Ms 300 -PerdidaPct 10 ; Quitar-Latencia modulo-b-1
+Desconectar-Red pg-1 red-datos ; Conectar-Red pg-1 red-datos
 ```
 
-### 6. Inspección de la Red Virtual Private
-Muestra los detalles del puente de red y la asignación de IPs internas de Docker:
+Herramientas sueltas:
+
 ```powershell
-docker network inspect proyecto-sistemas-distribuidos_red-aislada
+docker compose --profile pruebas run --rm -e LOTE=prueba1 k6 run /scripts/e1-caida-nodos.js
+docker compose --profile pruebas run --rm -e DURACION_S=60 sonda
 ```
 
-### 7. Prueba de Conectividad Interactiva (Resolución DNS Interna)
-Conexión interactiva desde Módulo A hacia Módulo B:
-```powershell
-docker exec -it modulo-a wget -qO- http://modulo-b:5000/health
-```
+## Estructura
 
-Conexión interactiva desde Módulo A hacia Módulo C:
-```powershell
-docker exec -it modulo-a wget -qO- http://modulo-c:6000/health
 ```
-
-### 8. Prueba de Acceso Público al API Gateway (Módulo A)
-Comprueba la disponibilidad del punto de entrada externo:
-```powershell
-curl.exe http://localhost:8080/health
-```
-
-### 9. Pruebas de Aislamiento de Red (Puertos Privados No Expuestos)
-Intento de acceso directo al Módulo B desde el Host:
-```powershell
-curl.exe http://localhost:5000
-```
-
-Intento de acceso directo al Módulo B desde el Host:
-```powershell
-curl.exe http://localhost:6000
-```
-
-### 10. Detener y Desmontar el Entorno
-Finaliza y remueve todos los contenedores y la red virtual privada:
-```powershell
-docker compose down
+docker-compose.yml          topología completa (3 redes, 21 servicios + herramientas de prueba)
+infra/haproxy/              balanceadores de entrada e internos
+infra/postgres/             imagen PostgreSQL con arranque HA (rol automático y reincorporación) y esquema particionado
+infra/pgpool/               imagen Pgpool-II, configuración con watchdog y script de failover
+infra/redis/                configuración del clúster y script de inicialización
+modulo-a/                   API Gateway + SPA (public/)
+modulo-b/                   servicio de dominio
+modulo-c/                   servicio de auditoría
+pruebas/k6/                 escenarios de carga
+pruebas/sonda/              sonda de disponibilidad (RTO)
+pruebas/caos/               inyección de fallos y orquestación de escenarios (PowerShell)
+pruebas/analisis/           tablas de RTO y de capacidad por etapa
+docs/                       plan de pruebas, actualización del diseño, diagramas y capturas
 ```

@@ -1,13 +1,13 @@
 {
   "name": "modulo-a-gateway",
-  "version": "1.0.0",
-  "description": "API Gateway e Ingesta de Pedidos",
+  "version": "3.0.0",
+  "description": "API Gateway TechOrders U3 (stateless, reintentos con backoff, trazabilidad)",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "axios": "^1.6.0",
-    "express": "^4.18.2"
+    "axios": "^1.7.9",
+    "express": "^4.21.2"
   }
 }

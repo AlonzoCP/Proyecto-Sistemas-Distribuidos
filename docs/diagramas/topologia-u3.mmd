@@ -1,0 +1,38 @@
+flowchart TB
+    U["Cliente / Navegador<br/>SPA + Health Dashboard"]
+    subgraph FE["red-frontend · única red con puertos publicados · Round Robin + health check activo"]
+        LB1["lb-1 · HAProxy<br/>:8080 · stats :8404"]
+        LB2["lb-2 · HAProxy<br/>:8081 · stats :8405"]
+        A1["modulo-a-1<br/>Node.js · API Gateway"]
+        A2["modulo-a-2<br/>Node.js · API Gateway"]
+    end
+    subgraph SV["red-servicios (internal) · Gateway → LB interno con reintentos y backoff"]
+        LI1["lb-int-1 · HAProxy<br/>:5000 → B · :6000 → C"]
+        LI2["lb-int-2 · HAProxy<br/>:5000 → B · :6000 → C"]
+        B1["modulo-b-1<br/>FastAPI · Dominio"]
+        B2["modulo-b-2<br/>FastAPI · Dominio"]
+        C1["modulo-c-1<br/>Go · Auditoría"]
+        C2["modulo-c-2<br/>Go · Auditoría"]
+    end
+    subgraph DT["red-datos (internal · 172.29.30.0/24) · B → Pgpool por libpq multi-host · C → Redis por ClusterClient"]
+        PP1["pgpool-1<br/>Pgpool-II + watchdog"]
+        PP2["pgpool-2<br/>Pgpool-II + watchdog"]
+        PG1[("pg-1<br/>PostgreSQL 16")]
+        PG2[("pg-2<br/>PostgreSQL 16")]
+        subgraph RC["Redis Cluster · 16.384 hash slots"]
+            R1[("redis-1 M")] --- R4[("redis-4 R")]
+            R2[("redis-2 M")] --- R5[("redis-5 R")]
+            R3[("redis-3 M")] --- R6[("redis-6 R")]
+        end
+    end
+    U -->|HTTP :8080| LB1
+    U -.->|respaldo :8081| LB2
+    LB1 & LB2 --> A1 & A2
+    A1 & A2 --> LI1 & LI2
+    LI1 & LI2 --> B1 & B2
+    LI1 & LI2 --> C1 & C2
+    B1 & B2 --> PP1 & PP2
+    PP1 <-.->|watchdog| PP2
+    PP1 & PP2 --> PG1 & PG2
+    PG1 ==>|streaming replication| PG2
+    C1 & C2 --> RC

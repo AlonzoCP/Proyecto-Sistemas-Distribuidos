@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 4 · Primario PostgreSQL congelado (fallo gris)",
+  "peticiones": 1384,
+  "tps_promedio": 4.2,
+  "latencia_p50_ms": 13,
+  "latencia_p95_ms": 18,
+  "latencia_p99_ms": 31,
+  "latencia_max_ms": 62,
+  "tasa_error_pct": 78.4,
+  "rto_ms": null
+}

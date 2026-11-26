@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 1 · Caída abrupta de modulo-b-1 (kill -9)",
+  "peticiones": 1194,
+  "tps_promedio": 19.6,
+  "latencia_p50_ms": 13,
+  "latencia_p95_ms": 19,
+  "latencia_p99_ms": 26,
+  "latencia_max_ms": 117,
+  "tasa_error_pct": 0.0,
+  "rto_ms": 0
+}

@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 3 · +300 ms en modulo-b-1 (Round Robin)",
+  "peticiones": 1194,
+  "tps_promedio": 19.6,
+  "latencia_p50_ms": 14,
+  "latencia_p95_ms": 317,
+  "latencia_p99_ms": 321,
+  "latencia_max_ms": 327,
+  "tasa_error_pct": 0.0,
+  "rto_ms": 0
+}

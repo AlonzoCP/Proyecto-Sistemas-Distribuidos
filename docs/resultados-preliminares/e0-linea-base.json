@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 0 · Línea base (20 pedidos/s, sin fallos)",
+  "peticiones": 795,
+  "tps_promedio": 19.4,
+  "latencia_p50_ms": 13,
+  "latencia_p95_ms": 20,
+  "latencia_p99_ms": 47,
+  "latencia_max_ms": 185,
+  "tasa_error_pct": 0.0,
+  "rto_ms": 0
+}

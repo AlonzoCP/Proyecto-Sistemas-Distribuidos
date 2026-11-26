@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 5 · Sobrecarga a 100 pedidos/s",
+  "peticiones": 2736,
+  "tps_promedio": 48.6,
+  "latencia_p50_ms": 764,
+  "latencia_p95_ms": 2734,
+  "latencia_p99_ms": 4956,
+  "latencia_max_ms": 6124,
+  "tasa_error_pct": 44.96,
+  "rto_ms": 0
+}

@@ -1,0 +1,11 @@
+{
+  "escenario": "Escenario 3b · +300 ms en modulo-b-1 (Least Connections)",
+  "peticiones": 1194,
+  "tps_promedio": 19.6,
+  "latencia_p50_ms": 13,
+  "latencia_p95_ms": 315,
+  "latencia_p99_ms": 321,
+  "latencia_max_ms": 330,
+  "tasa_error_pct": 0.0,
+  "rto_ms": 0
+}

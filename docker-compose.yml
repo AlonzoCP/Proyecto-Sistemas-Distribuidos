@@ -1,88 +1,383 @@
-# Subred virtual aislada exigida por el proyecto
-networks:
-  red-aislada:
-    driver: bridge
+# =============================================================================
+# TechOrders - Unidad 3: Alta Disponibilidad, Tolerancia a Fallos y Escalabilidad
+#
+# Levantar todo:          docker compose up -d --build
+# Ver estado:             docker compose ps
+# Interfaz (SPA):         http://localhost:8080   (respaldo: http://localhost:8081)
+# Estadísticas HAProxy:   http://localhost:8404/stats  y  http://localhost:8405/stats
+#
+# Ningún componente crítico corre como instancia única:
+#   lb-1, lb-2 ............ HAProxy de entrada (red-frontend)
+#   modulo-a-1, -2 ........ API Gateway Node.js (red-frontend + red-servicios)
+#   lb-int-1, -2 .......... HAProxy interno (red-servicios)
+#   modulo-b-1, -2 ........ Dominio Python/FastAPI (red-servicios + red-datos)
+#   modulo-c-1, -2 ........ Auditoría Go (red-servicios + red-datos)
+#   pgpool-1, -2 .......... Pgpool-II con watchdog (red-datos)
+#   pg-1, pg-2 ............ PostgreSQL primario + réplica (streaming replication)
+#   redis-1 .. redis-6 .... Redis Cluster: 3 maestros + 3 réplicas
+# =============================================================================
+name: techorders
 
-# Volúmenes persistentes para las dos bases de datos
+networks:
+  # Única red con puertos publicados hacia el host
+  red-frontend:
+    driver: bridge
+  # internal: true -> sin salida a Internet ni acceso desde el host
+  red-servicios:
+    driver: bridge
+    internal: true
+  red-datos:
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.30.0/24   # IPs fijas para los nodos del Redis Cluster
+
 volumes:
-  pg_data:
-  redis_data:
+  pg1_data:
+  pg2_data:
+  redis1_data:
+  redis2_data:
+  redis3_data:
+  redis4_data:
+  redis5_data:
+  redis6_data:
+
+# ----------------------------------------------------------------------------- plantillas
+x-haproxy: &haproxy
+  image: haproxy:3.0-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8404/lb-health"]
+    interval: 5s
+    timeout: 2s
+    retries: 3
+
+x-modulo-a: &modulo-a
+  build: ./modulo-a
+  restart: unless-stopped
+  networks: [red-frontend, red-servicios]
+  depends_on: [lb-int-1, lb-int-2]
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+    interval: 5s
+    timeout: 2s
+    retries: 3
+
+x-modulo-a-env: &modulo-a-env
+  PORT: "8080"
+  INTERNAL_LBS: lb-int-1,lb-int-2
+  EDGE_LBS: lb-1,lb-2
+  GATEWAY_NODES: modulo-a-1:8080,modulo-a-2:8080
+  SERVICE_B_NODES: modulo-b-1:5000,modulo-b-2:5000
+  SERVICE_C_NODES: modulo-c-1:6000,modulo-c-2:6000
+  RETRY_MAX_ATTEMPTS: "5"
+  RETRY_TIMEOUT_MS: "3000"
+  RETRY_BASE_MS: "200"
+
+x-modulo-b: &modulo-b
+  build: ./modulo-b
+  restart: unless-stopped
+  networks: [red-servicios, red-datos]
+  depends_on: [pgpool-1, pgpool-2]
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=2)"]
+    interval: 5s
+    timeout: 3s
+    retries: 3
+
+x-modulo-b-env: &modulo-b-env
+  DB_HOSTS: pgpool-1,pgpool-2     # libpq multi-host: si cae un Pgpool se usa el otro
+  DB_PORT: "5432"
+  DB_NAME: negocio_db
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  DB_POOL_MAX: "20"               # 2 réplicas x 20 = 40 < num_init_children (64) de cada Pgpool
+  DB_RETRIES: "6"
+
+x-modulo-c: &modulo-c
+  build: ./modulo-c
+  restart: unless-stopped
+  networks: [red-servicios, red-datos]
+  depends_on:
+    redis-cluster-init:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://127.0.0.1:6000/health"]
+    interval: 5s
+    timeout: 2s
+    retries: 3
+
+x-modulo-c-env: &modulo-c-env
+  PORT: "6000"
+  REDIS_NODES: 172.29.30.11:6379,172.29.30.12:6379,172.29.30.13:6379,172.29.30.14:6379,172.29.30.15:6379,172.29.30.16:6379
+
+x-postgres-env: &postgres-env
+  POSTGRES_DB: negocio_db
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  REPLICATION_USER: replicator
+  REPLICATION_PASSWORD: replicator
+
+x-pgpool: &pgpool
+  build: ./infra/pgpool
+  restart: unless-stopped
+  networks: [red-datos]
+  depends_on: [pg-1, pg-2]
+  healthcheck:
+    test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "5432"]
+    interval: 5s
+    timeout: 3s
+    retries: 3
+
+x-pgpool-env: &pgpool-env
+  PG1_HOST: pg-1
+  PG1_NAME: pg-1
+  PG2_HOST: pg-2
+  PG2_NAME: pg-2
+  PGPOOL1_HOST: pgpool-1
+  PGPOOL2_HOST: pgpool-2
+  PGPOOL_NUM_INIT_CHILDREN: "64"
+  PGPOOL_SR_CHECK_USER: postgres
+  PGPOOL_SR_CHECK_PASSWORD: postgres
+  APP_DB_USER: postgres
+  APP_DB_PASSWORD: postgres
+
+x-redis: &redis
+  image: redis:7.4-alpine
+  restart: unless-stopped
+  command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 2s
+    retries: 3
 
 services:
-  # -------------------------------------------------------------
-  # MÓDULO A: API Gateway (Node.js) - Integrante 1
-  # Único servicio con puerto expuesto hacia la red pública/host
-  # -------------------------------------------------------------
-  modulo-a:
-    build: ./modulo-a
-    container_name: modulo-a
+  # =========================================================================== CAPA FRONTEND
+  lb-1:
+    <<: *haproxy
+    container_name: lb-1
+    hostname: lb-1
+    command: ["haproxy", "-f", "/usr/local/etc/haproxy/comun.cfg", "-f", "/usr/local/etc/haproxy/entrada.cfg"]
+    volumes:
+      - ./infra/haproxy/comun.cfg:/usr/local/etc/haproxy/comun.cfg:ro
+      - ./infra/haproxy/entrada.cfg:/usr/local/etc/haproxy/entrada.cfg:ro
     ports:
-      - "8080:8080" # Exposición del Gateway al Host (localhost:8080)
-    networks:
-      - red-aislada
-    depends_on:
-      - modulo-b
-      - modulo-c
+      - "8080:8080"   # punto de entrada principal
+      - "8404:8404"   # estadísticas HAProxy
+    networks: [red-frontend]
 
-  # -------------------------------------------------------------
-  # MÓDULO B: Servicio de Dominio (Python/FastAPI) - Integrante 2
-  # -------------------------------------------------------------
-  modulo-b:
-    build: ./modulo-b
-    container_name: modulo-b
-    environment:
-      - DB_HOST=db-relacional
-      - DB_NAME=negocio_db
-      - DB_USER=postgres
-      - DB_PASSWORD=postgres
-    depends_on:
-      - db-relacional
-    networks:
-      - red-aislada
-    # Nota: No exponemos puertos al 'host' público, solo se comunican en la red interna
-
-    # -------------------------------------------------------------
-    # MÓDULO C: Servicio de Auditoría (Go) - Integrante 3
-    # -------------------------------------------------------------
-  modulo-c:
-    build: ./modulo-c
-    container_name: modulo-c
-    environment:
-      - PORT=6000
-      - REDIS_HOST=db-nosql
-      - REDIS_PORT=6379
-    expose:
-      - "6000" # Visible SOLO dentro de red-aislada
-    networks:
-      - red-aislada
-    depends_on:
-      - db-nosql
-
-  # -------------------------------------------------------------
-  # BD 1: Relacional (PostgreSQL 15)
-  # -------------------------------------------------------------
-  db-relacional:
-    image: postgres:15-alpine
-    container_name: db-relacional
-    environment:
-      POSTGRES_DB: negocio_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+  lb-2:
+    <<: *haproxy
+    container_name: lb-2
+    hostname: lb-2
+    command: ["haproxy", "-f", "/usr/local/etc/haproxy/comun.cfg", "-f", "/usr/local/etc/haproxy/entrada.cfg"]
     volumes:
-      - pg_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    networks:
-      - red-aislada
+      - ./infra/haproxy/comun.cfg:/usr/local/etc/haproxy/comun.cfg:ro
+      - ./infra/haproxy/entrada.cfg:/usr/local/etc/haproxy/entrada.cfg:ro
+    ports:
+      - "8081:8080"   # punto de entrada de respaldo (el SPA cambia solo si cae lb-1)
+      - "8405:8404"
+    networks: [red-frontend]
 
-  # -------------------------------------------------------------
-  # BD 2: NoSQL / Clave-Valor (Redis 7)
-  # -------------------------------------------------------------
-  db-nosql:
-    image: redis:7-alpine
-    container_name: db-nosql
-    command: redis-server --appendonly yes
+  modulo-a-1:
+    <<: *modulo-a
+    container_name: modulo-a-1
+    hostname: modulo-a-1
+    environment:
+      <<: *modulo-a-env
+      NODE_NAME: modulo-a-1
+
+  modulo-a-2:
+    <<: *modulo-a
+    container_name: modulo-a-2
+    hostname: modulo-a-2
+    environment:
+      <<: *modulo-a-env
+      NODE_NAME: modulo-a-2
+
+  # =========================================================================== CAPA SERVICIOS
+  lb-int-1:
+    <<: *haproxy
+    container_name: lb-int-1
+    hostname: lb-int-1
+    command: ["haproxy", "-f", "/usr/local/etc/haproxy/comun.cfg", "-f", "/usr/local/etc/haproxy/interno.cfg"]
     volumes:
-      - redis_data:/data
-    networks:
-      - red-aislada
-    # Sin bloque 'ports' para garantizar aislamiento interno
+      - ./infra/haproxy/comun.cfg:/usr/local/etc/haproxy/comun.cfg:ro
+      - ./infra/haproxy/interno.cfg:/usr/local/etc/haproxy/interno.cfg:ro
+    networks: [red-servicios]
+
+  lb-int-2:
+    <<: *haproxy
+    container_name: lb-int-2
+    hostname: lb-int-2
+    command: ["haproxy", "-f", "/usr/local/etc/haproxy/comun.cfg", "-f", "/usr/local/etc/haproxy/interno.cfg"]
+    volumes:
+      - ./infra/haproxy/comun.cfg:/usr/local/etc/haproxy/comun.cfg:ro
+      - ./infra/haproxy/interno.cfg:/usr/local/etc/haproxy/interno.cfg:ro
+    networks: [red-servicios]
+
+  modulo-b-1:
+    <<: *modulo-b
+    container_name: modulo-b-1
+    hostname: modulo-b-1
+    environment:
+      <<: *modulo-b-env
+      NODE_NAME: modulo-b-1
+
+  modulo-b-2:
+    <<: *modulo-b
+    container_name: modulo-b-2
+    hostname: modulo-b-2
+    environment:
+      <<: *modulo-b-env
+      NODE_NAME: modulo-b-2
+
+  modulo-c-1:
+    <<: *modulo-c
+    container_name: modulo-c-1
+    hostname: modulo-c-1
+    environment:
+      <<: *modulo-c-env
+      NODE_NAME: modulo-c-1
+
+  modulo-c-2:
+    <<: *modulo-c
+    container_name: modulo-c-2
+    hostname: modulo-c-2
+    environment:
+      <<: *modulo-c-env
+      NODE_NAME: modulo-c-2
+
+  # =========================================================================== CAPA DATOS: PostgreSQL
+  pg-1:
+    build: ./infra/postgres
+    container_name: pg-1
+    hostname: pg-1
+    restart: unless-stopped
+    environment:
+      <<: *postgres-env
+      NODE_NAME: pg-1
+      PEER_HOST: pg-2
+      INITIAL_ROLE: primary     # solo decide el rol del PRIMER arranque
+    volumes: [pg1_data:/var/lib/postgresql/data]
+    networks: [red-datos]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pg-2:
+    build: ./infra/postgres
+    container_name: pg-2
+    hostname: pg-2
+    restart: unless-stopped
+    environment:
+      <<: *postgres-env
+      NODE_NAME: pg-2
+      PEER_HOST: pg-1
+      INITIAL_ROLE: standby
+    volumes: [pg2_data:/var/lib/postgresql/data]
+    networks: [red-datos]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  pgpool-1:
+    <<: *pgpool
+    container_name: pgpool-1
+    hostname: pgpool-1
+    environment:
+      <<: *pgpool-env
+      PGPOOL_NODE_ID: "0"
+      PGPOOL_NODE_NAME: pgpool-1
+      PGPOOL_WD_PRIORITY: "2"
+
+  pgpool-2:
+    <<: *pgpool
+    container_name: pgpool-2
+    hostname: pgpool-2
+    environment:
+      <<: *pgpool-env
+      PGPOOL_NODE_ID: "1"
+      PGPOOL_NODE_NAME: pgpool-2
+      PGPOOL_WD_PRIORITY: "1"
+
+  # =========================================================================== CAPA DATOS: Redis Cluster
+  redis-1:
+    <<: *redis
+    container_name: redis-1
+    hostname: redis-1
+    volumes: [redis1_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.11 } }
+
+  redis-2:
+    <<: *redis
+    container_name: redis-2
+    hostname: redis-2
+    volumes: [redis2_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.12 } }
+
+  redis-3:
+    <<: *redis
+    container_name: redis-3
+    hostname: redis-3
+    volumes: [redis3_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.13 } }
+
+  redis-4:
+    <<: *redis
+    container_name: redis-4
+    hostname: redis-4
+    volumes: [redis4_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.14 } }
+
+  redis-5:
+    <<: *redis
+    container_name: redis-5
+    hostname: redis-5
+    volumes: [redis5_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.15 } }
+
+  redis-6:
+    <<: *redis
+    container_name: redis-6
+    hostname: redis-6
+    volumes: [redis6_data:/data, ./infra/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro]
+    networks: { red-datos: { ipv4_address: 172.29.30.16 } }
+
+  # Contenedor efímero: crea el clúster la primera vez y termina
+  redis-cluster-init:
+    image: redis:7.4-alpine
+    container_name: redis-cluster-init
+    restart: "no"
+    command: ["sh", "/cluster-init.sh"]
+    environment:
+      REDIS_NODES: 172.29.30.11:6379 172.29.30.12:6379 172.29.30.13:6379 172.29.30.14:6379 172.29.30.15:6379 172.29.30.16:6379
+    volumes: [./infra/redis/cluster-init.sh:/cluster-init.sh:ro]
+    networks: [red-datos]
+    depends_on: [redis-1, redis-2, redis-3, redis-4, redis-5, redis-6]
+
+  # =========================================================================== HERRAMIENTAS DE PRUEBA
+  # Solo se levantan con:  docker compose --profile pruebas run --rm <servicio> ...
+  k6:
+    image: grafana/k6:1.0.0
+    profiles: [pruebas]
+    networks: [red-frontend]
+    volumes: [./pruebas/k6:/scripts:ro, ./resultados:/resultados]
+    environment:
+      BASE_URLS: http://lb-1:8080,http://lb-2:8080
+
+  sonda:
+    image: node:22-alpine
+    profiles: [pruebas]
+    networks: [red-frontend]
+    working_dir: /sonda
+    volumes: [./pruebas/sonda:/sonda:ro, ./resultados:/resultados]
+    entrypoint: ["node", "/sonda/sonda.js"]
+    environment:
+      BASE_URLS: http://lb-1:8080,http://lb-2:8080

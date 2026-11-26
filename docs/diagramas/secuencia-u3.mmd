@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    actor U as Cliente (SPA)
+    participant LB as HAProxy entrada<br/>lb-1 / lb-2
+    participant A as Módulo A<br/>modulo-a-1 / -2
+    participant LI as HAProxy interno<br/>lb-int-1 / -2
+    participant C as Módulo C<br/>modulo-c-1 / -2
+    participant R as Redis Cluster<br/>3 maestros + 3 réplicas
+    participant B as Módulo B<br/>modulo-b-1 / -2
+    participant P as Pgpool-II<br/>pgpool-1 / -2
+    participant PG as PostgreSQL<br/>pg-1 (primario) / pg-2
+
+    U->>LB: POST /api/pedidos {cliente, producto, precio, pago}
+    Note over LB: Round Robin entre gateways UP<br/>(health check activo GET /health c/2 s)<br/>agrega X-Request-Id (UUID) y X-LB-Node
+    LB->>A: POST /api/pedidos + X-Request-Id
+    Note over A: valida payload<br/>request_id = Idempotency-Key | X-Request-Id
+
+    rect rgb(232, 245, 233)
+    Note over A,R: Fase de auditoría
+    A->>LI: POST :6000/logs {request_id, nodo_gateway, ...}
+    LI->>C: Round Robin entre réplicas UP de C
+    C->>R: SET NX log:{request_id} + ZADD índice
+    R-->>C: OK (slot CRC16 -> maestro dueño)
+    C-->>LI: 200 {log_id, nodo: modulo-c-x}
+    LI-->>A: 200 + X-Backend-Server
+    end
+
+    rect rgb(227, 242, 253)
+    Note over A,PG: Fase de dominio
+    A->>LI: POST :5000/procesar-pedido {request_id, ...}
+    LI->>B: Round Robin entre réplicas UP de B
+    B->>P: INSERT ... ON CONFLICT (request_id) DO NOTHING
+    P->>PG: escritura en el primario (partición HASH(request_id))
+    PG-->>P: pedido_id
+    P-->>B: pedido_id
+    B-->>LI: 200 {pedido_id, nodo: modulo-b-x}
+    LI-->>A: 200
+    end
+
+    A-->>LB: 200 {data, auditoria, trazabilidad{entrada, gateway, auditoria.nodo, dominio.nodo, intentos}}
+    LB-->>U: 200 + X-Served-By + X-LB-Node
+
+    Note over A,LI: Si una llamada interna falla (conexión, timeout 3 s, 502/503/504):<br/>reintento con exponential backoff + jitter (200, 400, 800 ms...)<br/>alternando lb-int-1 / lb-int-2 y con el MISMO request_id (idempotente)
